@@ -14,3 +14,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[dependencies]
+# For trigonometry
+libm = "0.2"

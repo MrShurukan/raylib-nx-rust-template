@@ -22,6 +22,17 @@ while app.running() {
 
 The game logic is written in Rust. A tiny C entrypoint and the devkitPro toolchain are used to produce the final `.nro`.
 
+## Features
+* Safe raylib-nx wrapper in Rust
+  * The list of functions is incomplete, but is easily expanded by copying a raylib function signature
+* Makefile and toolchain for .nro creation (courtesy of https://github.com/luizpestana/raylib-nx)
+* Custom panic handler (uses screen rendering)
+* Basic game starter code
+* Full customization in case something doesn't suit your needs
+
+## Example games
+* [Quoridor game for two](https://github.com/MrShurukan/purridor)
+
 ## Status
 
 This project is experimental and currently tested only with:

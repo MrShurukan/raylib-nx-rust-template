@@ -1,9 +1,9 @@
 mod sys;
 
-use alloc::vec::Vec;
+use alloc::ffi::CString;
 
 use core::{
-    ffi::c_char,
+    ffi::{c_int, CStr},
     marker::PhantomData,
     ops::{
         Add,
@@ -18,7 +18,6 @@ use core::{
         Ordering,
     },
 };
-
 // ============================================================
 // Math
 // ============================================================
@@ -104,6 +103,24 @@ impl Mul<f32> for Vec2 {
     }
 }
 
+impl From<(f32, f32)> for Vec2 {
+    fn from((x, y): (f32, f32)) -> Self {
+        Vec2::new(x, y)
+    }
+}
+
+impl From<(usize, usize)> for Vec2 {
+    fn from((x, y): (usize, usize)) -> Self {
+        Vec2::new(x as f32, y as f32)
+    }
+}
+
+impl From<(i32, i32)> for Vec2 {
+    fn from((x, y): (i32, i32)) -> Self {
+        Vec2::new(x as f32, y as f32)
+    }
+}
+
 impl MulAssign<f32> for Vec2 {
     fn mul_assign(&mut self, rhs: f32) {
         self.x *= rhs;
@@ -139,6 +156,32 @@ impl Rect {
             height,
         }
     }
+
+    pub const fn new_usize(
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Self {
+        Self {
+            x: x as f32,
+            y: y as f32,
+            width: width as f32,
+            height: height as f32,
+        }
+    }
+}
+
+impl From<(f32, f32, f32, f32)> for Rect {
+    fn from(value: (f32, f32, f32, f32)) -> Self {
+        Rect::new(value.0, value.1, value.2, value.3)
+    }
+}
+
+impl From<(usize, usize, usize, usize)> for Rect {
+    fn from(value: (usize, usize, usize, usize)) -> Self {
+        Rect::new_usize(value.0, value.1, value.2, value.3)
+    }
 }
 
 
@@ -155,6 +198,14 @@ pub struct Color {
     pub a: u8,
 }
 
+pub const fn lerp(from: f32, to: f32, t: f32) -> f32 {
+    from * (1.0 - t) + to * t
+}
+
+pub const fn lerp_u8(from: u8, to: u8, t: f32) -> u8 {
+    lerp(from as f32, to as f32, t) as u8
+}
+
 impl Color {
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self::rgba(r, g, b, 255)
@@ -167,6 +218,37 @@ impl Color {
         a: u8,
     ) -> Self {
         Self { r, g, b, a }
+    }
+
+    pub const fn with_alpha(self, a: u8) -> Self {
+        Self { r: self.r, g: self.g, b: self.b, a}
+    }
+
+    pub const fn darken(self, amount: u8) -> Self {
+        Self {
+            r: self.r.saturating_sub(amount),
+            g: self.g.saturating_sub(amount),
+            b: self.b.saturating_sub(amount),
+            a: self.a
+        }
+    }
+
+    /// Tints the color by a percentage (0 -> 1),
+    /// where 0 is base color and 1 means fully tint_color.
+    /// Doesn't affect alpha
+    ///
+    /// Also is not a real tint per se, but works good enough
+    pub const fn tint(self, tint_color: Color, amount: f32) -> Self {
+        if amount == 0.0 {
+            return self;
+        }
+
+        Self {
+            r: lerp_u8(self.r, tint_color.r, amount),
+            g: lerp_u8(self.g, tint_color.g, amount),
+            b: lerp_u8(self.b, tint_color.b, amount),
+            a: self.a
+        }
     }
 
     pub const WHITE: Self = Self::rgb(255, 255, 255);
@@ -191,43 +273,58 @@ impl Color {
         Self::rgb(245, 245, 245);
 }
 
-
 // ============================================================
-// C string helper
+// Texture2D
 // ============================================================
 
-pub struct Text {
-    bytes: Vec<u8>,
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct Texture2D {
+    pub id: u32,
+    pub width: c_int,
+    pub height: c_int,
+    pub mipmaps: c_int,
+    pub format: c_int,
 }
 
-impl Text {
-    pub fn new(text: &str) -> Self {
-        let mut bytes =
-            Vec::with_capacity(text.len() + 1);
+pub struct Texture {
+    raw: Texture2D,
+}
 
-        // C strings cannot contain embedded NUL.
-        // Replacing it is much nicer for a sketch/game API
-        // than panicking.
-        for byte in text.bytes() {
-            bytes.push(
-                if byte == 0 {
-                    b'?'
-                } else {
-                    byte
-                }
-            );
+#[derive(Debug, Clone, Copy)]
+pub enum TextureError {
+    LoadFailed,
+}
+
+impl Texture {
+    pub fn load(path: &CStr) -> Result<Self, TextureError> {
+        let raw = unsafe {
+            sys::LoadTexture(path.as_ptr())
+        };
+
+        if raw.id == 0 {
+            Err(TextureError::LoadFailed)
+        } else {
+            Ok(Self { raw })
         }
-
-        bytes.push(0);
-
-        Self { bytes }
     }
 
-    fn as_ptr(&self) -> *const c_char {
-        self.bytes.as_ptr().cast()
+    pub const fn width(&self) -> i32 {
+        self.raw.width
+    }
+
+    pub const fn height(&self) -> i32 {
+        self.raw.height
     }
 }
 
+impl Drop for Texture {
+    fn drop(&mut self) {
+        unsafe {
+            sys::UnloadTexture(self.raw);
+        }
+    }
+}
 
 // ============================================================
 // Input
@@ -273,9 +370,8 @@ pub struct Gamepad {
 }
 
 impl Gamepad {
-    fn new(id: i32) -> Self {
-        Self { id }
-    }
+    pub fn new() -> Self { Self::new_by_id(0) }
+    pub fn new_by_id(id: i32) -> Self { Self { id } }
 
     pub fn available(self) -> bool {
         unsafe {
@@ -351,42 +447,50 @@ static APP_EXISTS: AtomicBool =
     AtomicBool::new(false);
 
 pub struct App {
-    // Makes App conceptually tied to the platform thread
-    // and prevents it from just being an empty ZST.
-    _marker: PhantomData<*mut ()>,
+    // Prevent App from being Send/Sync.
+    // The raylib window/context is treated as thread-affine.
+    _not_send_sync: PhantomData<*mut ()>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AppError {
+    AlreadyInitialized,
+    WindowInitializationFailed,
 }
 
 impl App {
     pub fn new(
-        width: i32,
-        height: i32,
+        width: usize,
+        height: usize,
         title: &str,
-    ) -> Option<Self> {
-        if APP_EXISTS.swap(true, Ordering::AcqRel) {
-            return None;
+    ) -> Result<Self, AppError> {
+        if APP_EXISTS.swap(true, Ordering::Relaxed) {
+            return Err(AppError::AlreadyInitialized);
         }
 
-        let title = Text::new(title);
+        let c_str = CString::new(title).unwrap();
 
         unsafe {
             sys::InitWindow(
-                width,
-                height,
-                title.as_ptr(),
+                width as c_int,
+                height as c_int,
+                c_str.as_ptr(),
             );
         }
 
         if !unsafe { sys::IsWindowReady() } {
             APP_EXISTS.store(
                 false,
-                Ordering::Release,
+                Ordering::Relaxed,
             );
 
-            return None;
+            return Err(
+                AppError::WindowInitializationFailed
+            );
         }
 
-        Some(Self {
-            _marker: PhantomData,
+        Ok(Self {
+            _not_send_sync: PhantomData,
         })
     }
 
@@ -406,10 +510,6 @@ impl App {
         unsafe {
             sys::GetFrameTime()
         }
-    }
-
-    pub fn gamepad(&self, index: i32) -> Gamepad {
-        Gamepad::new(index)
     }
 
     pub fn begin_frame(
@@ -435,7 +535,7 @@ impl Drop for App {
 
         APP_EXISTS.store(
             false,
-            Ordering::Release,
+            Ordering::Relaxed,
         );
     }
 }
@@ -446,6 +546,8 @@ impl Drop for App {
 // ============================================================
 
 pub struct Frame<'app> {
+    // Makes Rust think we are borrowing an app when we create a frame
+    // This prevents us from creating another frame before we drop previous one
     _app: PhantomData<&'app mut App>,
 }
 
@@ -480,6 +582,27 @@ impl Frame<'_> {
         }
     }
 
+    /// This is different from plain DrawRectanglePro call, because origin is set via
+    /// applying relative coordinates (i.e. 0 -> 1), instead of raw pixel values
+    pub fn rect_rotation(
+        &mut self,
+        rect: Rect,
+        origin: Vec2,
+        rotation: f32,
+        color: Color,
+    ) {
+        let origin = Vec2::new(origin.x * rect.width, origin.y * rect.height);
+
+        unsafe {
+            sys::DrawRectanglePro(
+                rect,
+                origin,
+                rotation,
+                color,
+            )
+        }
+    }
+
     pub fn circle(
         &mut self,
         center: Vec2,
@@ -505,10 +628,10 @@ impl Frame<'_> {
         size: i32,
         color: Color,
     ) {
-        let text = Text::new(text);
+        let c_str = CString::new(text).unwrap();
 
-        self.prepared_text(
-            &text,
+        self.const_text(
+            &c_str,
             position,
             size,
             color,
@@ -516,9 +639,9 @@ impl Frame<'_> {
     }
 
     /// Allocation-free version for persistent/static text.
-    pub fn prepared_text(
+    pub fn const_text(
         &mut self,
-        text: &Text,
+        text: &CStr,
         position: Vec2,
         size: i32,
         color: Color,
@@ -533,11 +656,136 @@ impl Frame<'_> {
             );
         }
     }
+
+    pub fn measure_text(
+        &self,
+        text: &str,
+        size: i32,
+    ) -> i32 {
+        let c_str = CString::new(text).unwrap();
+
+        self.measure_const_text(&c_str, size)
+    }
+
+    pub fn measure_const_text(
+        &self,
+        text: &CStr,
+        size: i32,
+    ) -> i32 {
+        unsafe {
+            sys::MeasureText(
+                text.as_ptr(),
+                size as c_int,
+            )
+        }
+    }
+
+    pub fn text_right_align(
+        &mut self,
+        text: &str,
+        size: i32,
+        right_align_border: usize,
+        horizontal_offset: i32,
+        y: i32,
+        color: Color,
+    ) {
+        let c_str = CString::new(text).unwrap();
+
+        self.const_text_right_align(&c_str, size, right_align_border, horizontal_offset, y, color);
+    }
+
+    pub fn const_text_right_align(
+        &mut self,
+        text: &CStr,
+        size: i32,
+        right_align_border: usize,
+        horizontal_offset: i32,
+        y: i32,
+        color: Color,
+    ) {
+        let x = right_align_border as i32 - self.measure_const_text(&text, size) - horizontal_offset;
+
+        self.const_text(&text, (x, y).into(), size, color)
+    }
+
+    pub fn texture(
+        &mut self,
+        texture: &Texture,
+        position: Vec2
+    ) {
+        unsafe {
+            sys::DrawTextureV(
+                texture.raw,
+                position,
+                Color::WHITE,
+            );
+        }
+    }
+
+    pub fn texture_tint(
+        &mut self,
+        texture: &Texture,
+        position: Vec2,
+        tint: Color,
+    ) {
+        unsafe {
+            sys::DrawTextureV(
+                texture.raw,
+                position,
+                tint,
+            );
+        }
+    }
 }
 
 impl Drop for Frame<'_> {
     fn drop(&mut self) {
         unsafe {
+            sys::EndDrawing();
+        }
+    }
+}
+
+// ============================================================
+// Random
+// ============================================================
+pub fn get_random_value(min: i32, max: i32) -> i32 {
+    unsafe {
+        sys::GetRandomValue(min, max)
+    }
+}
+
+// ============================================================
+// Panic handling
+// ============================================================
+/// Displays a simple screen describing a problem. [message] has to be null-terminated
+pub(crate) fn panic_screen(
+    message: &[u8],
+) -> ! {
+    loop {
+        unsafe {
+            sys::BeginDrawing();
+
+            sys::ClearBackground(
+                Color::rgb(20, 0, 0)
+            );
+
+            sys::DrawText(
+                c"FATAL ERROR".as_ptr(),
+                40,
+                40,
+                48,
+                Color::RED,
+            );
+
+            sys::DrawText(
+                message.as_ptr().cast(),
+                40,
+                120,
+                22,
+                Color::WHITE,
+            );
+
             sys::EndDrawing();
         }
     }

@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
-use core::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_float, c_int};
 
-use super::{Color, Rect, Vec2};
+use super::{Color, Rect, Texture2D, Vec2};
 
 unsafe extern "C" {
     // Window
@@ -17,6 +17,9 @@ unsafe extern "C" {
 
     pub fn WindowShouldClose() -> bool;
     pub fn IsWindowReady() -> bool;
+
+    // Random
+    pub fn GetRandomValue(min: c_int, max: c_int) -> c_int;
 
     // Timing
     pub fn SetTargetFPS(fps: c_int);
@@ -41,10 +44,32 @@ unsafe extern "C" {
         color: Color,
     );
 
+    pub fn DrawRectanglePro(
+        rect: Rect,
+        origin: Vec2,
+        rotation: c_float,
+        color: Color
+    );
+
     pub fn DrawCircleV(
         center: Vec2,
         radius: f32,
         color: Color,
+    );
+
+    // Texture2D
+    pub fn LoadTexture(
+        file_name: *const c_char,
+    ) -> Texture2D;
+
+    pub fn UnloadTexture(
+        texture: Texture2D,
+    );
+
+    pub fn DrawTextureV(
+        texture: Texture2D,
+        position: Vec2,
+        tint: Color,
     );
 
     // Text
@@ -55,6 +80,11 @@ unsafe extern "C" {
         font_size: c_int,
         color: Color,
     );
+
+    pub fn MeasureText(
+        text: *const c_char,
+        font_size: c_int,
+    ) -> c_int;
 
     // Gamepad
     pub fn IsGamepadAvailable(gamepad: c_int) -> bool;

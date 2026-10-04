@@ -449,7 +449,7 @@ static APP_EXISTS: AtomicBool =
 pub struct App {
     // Prevent App from being Send/Sync.
     // The raylib window/context is treated as thread-affine.
-    _not_send_sync: PhantomData<*mut ()>,
+    thread_affinity: PhantomData<*mut ()>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -490,7 +490,7 @@ impl App {
         }
 
         Ok(Self {
-            _not_send_sync: PhantomData,
+            thread_affinity: PhantomData,
         })
     }
 
@@ -522,7 +522,7 @@ impl App {
         }
 
         Frame {
-            _app: PhantomData,
+            app_borrow: PhantomData,
         }
     }
 }
@@ -548,7 +548,7 @@ impl Drop for App {
 pub struct Frame<'app> {
     // Makes Rust think we are borrowing an app when we create a frame
     // This prevents us from creating another frame before we drop previous one
-    _app: PhantomData<&'app mut App>,
+    app_borrow: PhantomData<&'app mut App>,
 }
 
 impl Frame<'_> {

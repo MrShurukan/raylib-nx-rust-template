@@ -11,7 +11,7 @@ mod panic_buffer;
 use core::ffi::c_int;
 
 use crate::game::input::GameInput;
-use crate::game::world::Game;
+use crate::game::Game;
 use crate::game::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::raylib::Gamepad;
 use raylib::{
@@ -33,18 +33,19 @@ pub extern "C" fn rust_main() -> c_int {
 
     app.set_target_fps(60);
 
-    let mut game = Game::new();
+    let Ok(mut game) = Game::new() else {
+        return 1;
+    };
     let gamepad = Gamepad::new();
 
     while app.running() {
         let dt = app.delta_time();
 
+        let input = GameInput::read(&gamepad);
+        game.update(&input, dt);
+
         let mut frame =
             app.begin_frame(Color::rgb(10, 10, 10));
-
-        let input = GameInput::read(&gamepad);
-
-        game.update(&input, dt);
         game.draw(&mut frame);
 
         // EndDrawing() happens automatically here.

@@ -42,7 +42,7 @@ BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
 INCLUDES	:=	include
-#ROMFS	:=	romfs
+ROMFS	:=	romfs
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -158,7 +158,7 @@ all: $(BUILD)
 
 rust:
 	@echo "Building Rust..."
-	@cd $(RUST_DIR) && cargo build --release --lib
+	+@cd "$(RUST_DIR)" && cargo build --release --lib
 
 $(BUILD): rust
 	@[ -d $@ ] || mkdir -p $@
@@ -178,7 +178,12 @@ endif
 else
 .PHONY:	all
 
-DEPENDS	:=	$(OFILES:.o=.d)
+DEPENDS := $(OFILES:.o=.d)
+
+# Adding or removing assets also rebuilds the NRO.
+ifneq ($(ROMFS),)
+ROMFS_DEPS := $(shell find "$(TOPDIR)/$(ROMFS)" -type f -o -type d)
+endif
 
 #---------------------------------------------------------------------------------
 # main targets
@@ -188,9 +193,9 @@ ifeq ($(strip $(APP_JSON)),)
 all	:	$(OUTPUT).nro
 
 ifeq ($(strip $(NO_NACP)),)
-$(OUTPUT).nro	:	$(OUTPUT).elf $(OUTPUT).nacp
+$(OUTPUT).nro	:	$(OUTPUT).elf $(OUTPUT).nacp $(ROMFS_DEPS) $(APP_ICON)
 else
-$(OUTPUT).nro	:	$(OUTPUT).elf
+$(OUTPUT).nro	:	$(OUTPUT).elf $(ROMFS_DEPS) $(APP_ICON)
 endif
 
 else
@@ -203,7 +208,7 @@ $(OUTPUT).nso	:	$(OUTPUT).elf
 
 endif
 
-$(OUTPUT).elf	:	$(OFILES)
+$(OUTPUT).elf	:	$(OFILES) $(RUST_LIB) $(RAYLIB_LIB)
 
 $(OFILES_SRC)	: $(HFILES_BIN)
 

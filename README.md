@@ -33,6 +33,11 @@ The game logic is written in Rust. A tiny C entrypoint and the devkitPro toolcha
 ## Example games
 * [Quoridor game for two](https://github.com/MrShurukan/purridor)
 
+## Quick start
+
+See [Starting your own game](DEVELOPMENT.md) for a guide to the structures, files, input, assets, and state transitions,
+with small code examples.
+
 ## Status
 
 This project is experimental and currently tested only with:
@@ -102,6 +107,7 @@ A typical layout is:
 .
 ├── Makefile
 ├── build.sh
+├── romfs/
 ├── source/
 │   └── main.c
 └── rust_game/
@@ -112,20 +118,41 @@ A typical layout is:
     └── src/
         ├── lib.rs
         ├── runtime.rs
+        ├── panic_buffer.rs
+        ├── game/
+        │   ├── mod.rs
+        │   ├── assets.rs
+        │   ├── controller.rs
+        │   ├── input.rs
+        │   ├── render.rs
+        │   ├── util.rs
+        │   └── world.rs
         └── raylib/
             ├── mod.rs
             └── sys.rs
 ```
 
-`source/main.c` is the native Switch entrypoint, should remain tiny.
+`source/main.c` is the native Switch entrypoint and mounts the embedded RomFS.
+The Makefile includes `romfs/` in the NRO even when no game assets have been added yet.
 
 `runtime.rs` contains Rust runtime glue such as the global allocator, panic handler, and allocation error handler.
 
 `raylib/sys.rs` contains unsafe raw C ABI declarations for raylib.
+`raylib/mod.rs` contains the ergonomic Rust API.
 
-`raylib/mod.rs` contains the safe ergonomic Rust API.
+`lib.rs` contains the application loop. Input and update happen before beginning a drawing frame.
 
-`lib.rs` contains the game/application entrypoint.
+`game/mod.rs` owns the current session and loaded assets, and connects update and draw.
+A reset creates a new session without loading the assets again.
+
+`game/controller.rs` stores screen states and translates game input into world actions.
+World errors are handled here, so the world doesn't have to know about the error screen or the next frame's state.
+
+`game/assets.rs` loads resources once. `game/render.rs` handles drawing, screen coordinates, and UI.
+`game/input.rs` translates gamepad buttons into game input.
+
+`game/world.rs` contains game data and rules. The starter leaves the world empty and shows Hello World.
+Add only the fields needed by your own game.
 
 ## Prerequisites
 
@@ -177,8 +204,6 @@ sudo apt install -y \
     zip \
     unzip
 ```
-
-## 3. Install devkitPro
 
 ## 3. Install devkitPro
 
@@ -422,11 +447,16 @@ The easiest way is:
 or manually:
 
 ```bash
-make clean
 make -j"$(nproc)"
 ```
 
 The Makefile first invokes Cargo to build the Rust static library and then uses devkitPro to produce the final Switch executable.
+A regular build is incremental: changes to the Rust or raylib libraries relink the ELF, and changes to RomFS files
+or directories rebuild the NRO. Adding or removing an asset is tracked too.
+
+`build.sh` stops on errors, runs from its own project folder, and forwards arguments to Make.
+The devkitPro environment and Cargo must already be available in the calling shell, as described above.
+Use `./build.sh clean` when you actually want to remove the Switch build outputs; the next regular build recreates them.
 
 A successful build should produce:
 

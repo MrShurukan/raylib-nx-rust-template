@@ -23,7 +23,7 @@ unsafe impl GlobalAlloc for NewlibAllocator {
         unsafe { memalign(alignment, layout.size()) as *mut u8 }
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe { free(ptr.cast()) }
     }
 }
@@ -32,7 +32,7 @@ unsafe impl GlobalAlloc for NewlibAllocator {
 static GLOBAL_ALLOCATOR: NewlibAllocator = NewlibAllocator;
 
 #[alloc_error_handler]
-fn allocation_error(_layout: Layout) -> ! {
+fn allocation_error(layout: Layout) -> ! {
     loop {}
 }
 

@@ -1,7 +1,7 @@
 use alloc::string::String;
 
 use super::input::GameInput;
-use super::world::World;
+use game_core::world::World;
 
 /// Major divisions of the game state. Fitting additions would be something like MainMenu,
 /// Settings, GameOver, etc.

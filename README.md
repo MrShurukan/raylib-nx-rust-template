@@ -28,6 +28,7 @@ The game logic is written in Rust. A tiny C entrypoint and the devkitPro toolcha
 * Makefile and toolchain for .nro creation (courtesy of https://github.com/luizpestana/raylib-nx)
 * Custom panic handler (uses screen rendering)
 * Basic game starter code
+* Platform-independent `game_core` crate with host-side testing via `./test.sh`
 * Full customization in case something doesn't suit your needs
 
 ## Example games
@@ -107,6 +108,12 @@ A typical layout is:
 .
 ├── Makefile
 ├── build.sh
+├── test.sh
+├── game_core/
+│   ├── Cargo.toml
+│   └── src/
+│       ├── lib.rs
+│       └── world.rs
 ├── romfs/
 ├── source/
 │   └── main.c
@@ -125,8 +132,7 @@ A typical layout is:
         │   ├── controller.rs
         │   ├── input.rs
         │   ├── render.rs
-        │   ├── util.rs
-        │   └── world.rs
+        │   └── util.rs
         └── raylib/
             ├── mod.rs
             └── sys.rs
@@ -151,8 +157,9 @@ World errors are handled here, so the world doesn't have to know about the error
 `game/assets.rs` loads resources once. `game/render.rs` handles drawing, screen coordinates, and UI.
 `game/input.rs` translates gamepad buttons into game input.
 
-`game/world.rs` contains game data and rules. The starter leaves the world empty and shows Hello World.
-Add only the fields needed by your own game.
+`game_core/src/world.rs` contains game data and rules in a separate `no_std` library using `core` and `alloc`.
+It has no raylib or Switch dependencies; `rust_game` uses it through a path dependency.
+The starter leaves the world empty and shows Hello World. Add only the fields needed by your own game.
 
 ## Prerequisites
 
@@ -468,11 +475,20 @@ A successful build should produce:
 
 The `.nro` is the file to copy to your Switch.
 
+## Testing game rules
+
+Run `./test.sh` in WSL to test `game_core` on the host. Only Rust/Cargo is needed, not devkitPro or a Switch.
+The script changes into `game_core` so the sibling Switch Cargo configuration does not apply.
+Arguments are forwarded, for example `./test.sh movement` or `./test.sh -- --nocapture`.
+
+Add unit tests beside rules and scenario tests in `game_core/tests/`; see [Development](DEVELOPMENT.md#8-test-game-rules).
+The empty starter has no tests yet. Check graphics, input, and platform integration with a Switch build separately.
+
 ## IDE support
 
 RustRover and VS Code with rust-analyzer can both be used with WSL (using a remote connection, i.e. SSH, not just opening the files natively in Windows)
 
-The library target should also disable normal Rust test targets:
+The Switch application in `rust_game` disables normal Rust test targets:
 
 ```toml
 [lib]
@@ -482,7 +498,7 @@ bench = false
 doctest = false
 ```
 
-The Switch target does not provide the normal Rust test harness.
+The Switch target does not provide the normal Rust test harness. Test game rules in `game_core` on the host instead.
 
 ### `alloc_error_handler` false positive
 

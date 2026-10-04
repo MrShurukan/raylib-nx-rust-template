@@ -16,5 +16,6 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
+game_core = { path = "../game_core" }
 # For trigonometry
 libm = "0.2"

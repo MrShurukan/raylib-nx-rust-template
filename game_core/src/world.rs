@@ -1,4 +1,4 @@
-/// Game data and rules. Rendering, assets, and screen states live separately.
+/// Platform-independent game data and rules. Rendering and input live in rust_game.
 pub struct World {
     // TODO: Fill your actual world info here
 }

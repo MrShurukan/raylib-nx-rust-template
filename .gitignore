@@ -1,6 +1,7 @@
 .idea
 build
 rust_game/target
+game_core/target
 
 # Built binaries and metadata
 *.elf

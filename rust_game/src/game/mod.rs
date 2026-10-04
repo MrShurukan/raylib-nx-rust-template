@@ -3,7 +3,6 @@ mod controller;
 pub mod input;
 mod render;
 mod util;
-mod world;
 
 use crate::raylib::{Frame, TextureError};
 use assets::Assets;

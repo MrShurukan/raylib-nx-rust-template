@@ -11,7 +11,7 @@ Paths below are relative to the repository root.
 |-----------------------------------------------|---------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
 | `rust_game/src/lib.rs`                        | `App`, `Game`, `Gamepad`, `Frame`                             | Create the application and run input, update, and draw each frame.                                       |
 | `rust_game/src/game/mod.rs`                   | `Game`                                                        | Own a `Session` and `Assets`, connect the components, and handle reset. Screen dimensions live here too. |
-| `rust_game/src/game/world.rs`                 | `World`                                                       | Store game data and implement rules: movement, collisions, turns, victory conditions.                    |
+| `game_core/src/world.rs`                      | `World`                                                       | Store game data and implement rules: movement, collisions, turns, victory conditions.                    |
 | `rust_game/src/game/controller.rs`            | `Session`, `GameState`, `ErrorInfo`                           | Translate input into world actions and decide when screen states change.                                 |
 | `rust_game/src/game/input.rs`                 | `GameInput`                                                   | Read gamepad buttons and sticks once per frame.                                                          |
 | `rust_game/src/game/render.rs`                | —                                                             | Draw the world, animations, and UI using `Frame`.                                                        |
@@ -21,6 +21,7 @@ Paths below are relative to the repository root.
 | `rust_game/src/raylib/sys.rs`                 | C declarations                                                | Raw FFI for the wrapper.                                                                                 |
 | `rust_game/src/runtime.rs`, `panic_buffer.rs` | allocator, panic handler, `PanicBuffer`                       | Platform runtime and fatal error reporting. Usually left alone.                                          |
 | `source/main.c`                               | —                                                             | Mount RomFS, call `rust_main`, and unmount RomFS.                                                        |
+| `test.sh`                                     | —                                                             | Run game rules tests on the host, independently of the Switch toolchain.                                 |
 | `Makefile`, `build.sh`                        | —                                                             | Compile Rust, link the Switch executable, and package the NRO with RomFS.                                |
 
 The normal flow is:
@@ -46,27 +47,27 @@ Build in WSL with devkitPro and Cargo on PATH: `./build.sh`. Changes are tracked
 
 ## 2. Add world data and rules
 
-Add session data to `world.rs`, initialize it in `World::new`, and implement actions as methods.
+Add game data to `game_core/src/world.rs`, initialize it in `World::new`, and implement actions as methods.
+Keep this crate independent of raylib and platform code; `core` and `alloc` are available.
 For example, a player position and movement:
 
 ```rust
-use crate::raylib::Vec2;
-
 pub struct World {
-    player_pos: Vec2,
+    player_pos: (f32, f32),
 }
 
 impl World {
     pub fn new() -> Self {
-        Self { player_pos: Vec2::new(320.0, 240.0) }
+        Self { player_pos: (320.0, 240.0) }
     }
 
-    pub fn player_pos(&self) -> Vec2 {
+    pub fn player_pos(&self) -> (f32, f32) {
         self.player_pos
     }
 
-    pub fn move_player(&mut self, delta: Vec2) {
-        self.player_pos += delta;
+    pub fn move_player(&mut self, dx: f32, dy: f32) {
+        self.player_pos.0 += dx;
+        self.player_pos.1 += dy;
     }
 }
 ```
@@ -85,7 +86,8 @@ In the controller's `Running` branch:
 
 ```rust
 let speed = 200.0;
-session.world.move_player(input.movement * (speed * dt));
+let delta = input.movement * (speed * dt);
+session.world.move_player(delta.x, delta.y);
 ```
 
 `dt` is in seconds. Use `pressed` for one-time actions and `down` for held buttons.
@@ -95,7 +97,7 @@ session.world.move_player(input.movement * (speed * dt));
 Replace Hello World in `render.rs` with:
 
 ```rust
-frame.circle(session.world.player_pos(), 20.0, Color::WHITE);
+frame.circle(session.world.player_pos().into(), 20.0, Color::WHITE);
 ```
 
 Keep screen layout, colors, UI, and board-to-pixel conversions here. `session.elapsed_time` is available for animation.
@@ -151,7 +153,7 @@ Add `TurnTransition` and `GameOver` to `GameState`. In the controller, handle th
 
 ```rust
 use alloc::format;
-use super::world::TurnOutcome;
+use game_core::world::TurnOutcome;
 
 match session.world.attack(target) {
     Ok(TurnOutcome::TurnFinished) => session.state = GameState::TurnTransition,
@@ -176,15 +178,44 @@ to `Session` and take it at the start of update or when an animation finishes. T
 ## 7. Split files as the game grows
 
 Start with the existing modules. When `World` grows around distinct concepts, add `player.rs`, `enemy.rs`, or `combat.rs`
-inside `game/` and declare them in `game/mod.rs`. Let `World` own these smaller structures.
+inside `game_core/src/` and declare them in `game_core/src/lib.rs`. Let `World` own these smaller structures.
+Keep input, rendering, assets, and screen transitions in `rust_game/src/game/`.
 
 If target selection becomes complicated, store the selected enemy and attack in `Session`.
 The renderer can highlight the target and show expected damage. On confirmation, the controller calls `World::attack`
 to validate and apply the action. Previewing an attack shouldn't reduce health or spend action points.
 
 Keep files focused on responsibilities rather than splitting one large implementation into arbitrary chunks.
-There is no separate logic crate or test harness in this minimal starter. Those can be introduced later if the game's
-rules become complex enough to benefit from host-side tests.
 
 For more raylib functionality, add the matching C declaration in `raylib/sys.rs` and the ergonomic method in
 `raylib/mod.rs`. Check signatures against the actual `raylib-nx` headers used for your build.
+
+## 8. Test game rules
+
+Run `./test.sh` in WSL from the project root, or `cargo test` from `game_core`.
+These are host tests; the two crates intentionally remain separate Cargo packages.
+Do not run the test command from `rust_game`, which selects the Switch target.
+
+Put unit tests in a `#[cfg(test)] mod tests` beside the rule they exercise. For example, after adding
+movement from section 2, append this to `game_core/src/world.rs`:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::World;
+
+    #[test]
+    fn movement_applies_both_axes() {
+        let mut world = World::new();
+        world.move_player(10.0, -5.0);
+        assert_eq!(world.player_pos(), (330.0, 235.0));
+    }
+}
+```
+
+For sequences of actions, add integration tests under `game_core/tests/` and import the public API
+with `use game_core::world::World;`. Prefer tests for boundaries, invalid actions leaving state unchanged,
+and interactions between rules. The empty starter needs no placeholder tests.
+
+Host tests use the standard test harness while game code remains `no_std`. The allocator and panic handler
+stay in `rust_game`; do not add them to `game_core`. Run `./build.sh` separately to check Switch integration.

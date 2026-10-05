@@ -1,638 +1,68 @@
 # raylib-nx-rust-template
 
-A minimal Rust + raylib-nx starter template for Nintendo Switch homebrew development.
+A small Rust + raylib-nx template for Nintendo Switch homebrew games.
 
-The goal of this project is to provide a small, understandable foundation for writing Switch homebrew games mostly in Rust while using [raylib-nx] as the graphics/input backend.
+Game code uses `core` and `alloc`. A tiny C entrypoint and devkitPro link the Rust static library with [raylib-nx](https://github.com/luizpestana/raylib-nx) and produce a `.nro` executable.
 
-This is **not a game engine**. The intended development style is closer to raylib, Processing, or p5.js:
+The starter displays **Hello World**. It provides a game loop, a focused Rust wrapper for drawing and input, resource cleanup through `Drop`, a custom allocator, and a graphical panic handler. Add raylib functions as your game needs them.
 
-```rust
-while app.running() {
-    let dt = app.delta_time();
+## Build and test
 
-    // Update game state...
-
-    let mut frame = app.begin_frame(Color::BLACK);
-
-    frame.rect(...);
-    frame.circle(...);
-    frame.text(...);
-}
-```
-
-The game logic is written in Rust. A tiny C entrypoint and the devkitPro toolchain are used to produce the final `.nro`.
-
-## Features
-* Safe raylib-nx wrapper in Rust
-  * The list of functions is incomplete, but is easily expanded by copying a raylib function signature
-* Makefile and toolchain for .nro creation (courtesy of https://github.com/luizpestana/raylib-nx)
-* Custom panic handler (uses screen rendering)
-* Basic game starter code
-* Platform-independent `game_core` crate with host-side testing via `./test.sh`
-* Full customization in case something doesn't suit your needs
-
-## Example games
-* [Quoridor game for two](https://github.com/MrShurukan/purridor)
-
-## Quick start
-
-See [Starting your own game](DEVELOPMENT.md) for a guide to the structures, files, input, assets, and state transitions,
-with small code examples.
-
-## Status
-
-This project is experimental and currently tested only with:
-
-* Windows 11
-* WSL2
-* Ubuntu 24.04
-* devkitPro / devkitA64
-* libnx
-* raylib-nx
-* Rust nightly
-* `aarch64-nintendo-switch-freestanding`
-
-Other host environments may work, but are currently untested.
-
-## Why this exists
-
-Rust has a Nintendo Switch target:
-
-```text
-aarch64-nintendo-switch-freestanding
-```
-
-but it is a freestanding `no_std` target.
-
-This means a normal desktop Rust application cannot simply be compiled for Switch with the complete Rust standard library.
-
-This template uses a different architecture:
-
-```text
-Rust game code
-    |
-    | core + alloc
-    v
-Rust static library
-    |
-    | C ABI
-    v
-devkitPro linker
-    |
-    +-- raylib-nx
-    +-- Mesa / EGL / GLES2
-    +-- libnx
-    +-- newlib
-    |
-    v
-Nintendo Switch .nro
-```
-
-Rust provides the game code while devkitPro remains responsible for the platform runtime and final executable.
-
-The Rust global allocator delegates allocations to newlib, so standard `alloc` types such as these work normally:
-
-```rust
-Vec<T>
-String
-Box<T>
-```
-
-The current project has been tested with repeated allocations, vector growth, string formatting, deallocation, and over-aligned allocations.
-
-## Project structure
-
-A typical layout is:
-
-```text
-.
-├── Makefile
-├── build.sh
-├── test.sh
-├── game_core/
-│   ├── Cargo.toml
-│   └── src/
-│       ├── lib.rs
-│       └── world.rs
-├── romfs/
-├── source/
-│   └── main.c
-└── rust_game/
-    ├── Cargo.toml
-    ├── rust-toolchain.toml
-    ├── .cargo/
-    │   └── config.toml
-    └── src/
-        ├── lib.rs
-        ├── runtime.rs
-        ├── panic_buffer.rs
-        ├── game/
-        │   ├── mod.rs
-        │   ├── assets.rs
-        │   ├── controller.rs
-        │   ├── input.rs
-        │   ├── render.rs
-        │   └── util.rs
-        └── raylib/
-            ├── mod.rs
-            └── sys.rs
-```
-
-`source/main.c` is the native Switch entrypoint and mounts the embedded RomFS.
-The Makefile includes `romfs/` in the NRO even when no game assets have been added yet.
-
-`runtime.rs` contains Rust runtime glue such as the global allocator, panic handler, and allocation error handler.
-
-`raylib/sys.rs` contains unsafe raw C ABI declarations for raylib.
-`raylib/mod.rs` contains the ergonomic Rust API.
-
-`lib.rs` contains the application loop. Input and update happen before beginning a drawing frame.
-
-`game/mod.rs` owns the current session and loaded assets, and connects update and draw.
-A reset creates a new session without loading the assets again.
-
-`game/controller.rs` stores screen states and translates game input into world actions.
-World errors are handled here, so the world doesn't have to know about the error screen or the next frame's state.
-
-`game/assets.rs` loads resources once. `game/render.rs` handles drawing, screen coordinates, and UI.
-`game/input.rs` translates gamepad buttons into game input.
-
-`game_core/src/world.rs` contains game data and rules in a separate `no_std` library using `core` and `alloc`.
-It has no raylib or Switch dependencies; `rust_game` uses it through a path dependency.
-The starter leaves the world empty and shows Hello World. Add only the fields needed by your own game.
-
-## Prerequisites
-
-You need a Nintendo Switch capable of running homebrew (or an emulator, I tested this project with Eden) and a working way to copy/run `.nro` applications.
-
-This README only covers the development toolchain.
-
-## 1. Install WSL2
-
-This project is currently developed and tested inside Ubuntu running under WSL2.
-
-I used Ubuntu 24.04:
-
-```powershell
-# As admin PowerShell
-wsl --install -d Ubuntu-24.04
-```
-
-All remaining commands in this README should be executed inside Ubuntu unless stated otherwise.
-
-It is recommended to keep development files inside the Linux filesystem, for example:
-
-```text
-~/dev
-```
-
-rather than under:
-
-```text
-/mnt/c/...
-```
-
-**Please note:** Makefile will rely on `~/dev/` folder in this example, so if you want to install your packages somewhere
-you will have to edit Makefile, more on that in [section 7](#7-configure-the-raylib-nx-path)
-
-## 2. Install basic Linux development tools
+Run in WSL from the project root, with Cargo and devkitPro on PATH:
 
 ```bash
-sudo apt update
-
-sudo apt install -y \
-    build-essential \
-    git \
-    curl \
-    wget \
-    cmake \
-    ninja-build \
-    pkg-config \
-    zip \
-    unzip
+./build.sh          # Build the Switch executable
+./test.sh           # Test platform-independent rules on the host
+./build.sh clean    # Remove Switch build outputs
 ```
 
-## 3. Install devkitPro
+The output is `<project-folder-name>.nro` in the project root. Copy it to your Switch using your usual homebrew workflow. Regular builds track changes; cleaning before every build is unnecessary.
 
-devkitPro uses its own `pacman` package manager for toolchains and platform libraries.
-
-On Debian/Ubuntu systems, install the devkitPro pacman bootstrap first:
+The build expects raylib-nx at `~/dev/raylib-nx`. To use another location:
 
 ```bash
-cd /tmp
-
-wget https://apt.devkitpro.org/install-devkitpro-pacman
-chmod +x install-devkitpro-pacman
-sudo ./install-devkitpro-pacman
+./build.sh RAYLIB_DIR=/your/path/to/raylib-nx
 ```
 
-**Please note:** wget may fail with 403. In that case, refer to the instructions below (but I did something easier, I just opened the website and copied the script manually)
+The empty starter has no tests yet. Host tests do not exercise graphics, input, or Switch integration.
 
-The official devkitPro pacman installation instructions are available here:
+## Documentation
 
-[https://devkitpro.org/wiki/devkitPro_pacman](https://devkitpro.org/wiki/devkitPro_pacman)
+| Guide | Contents |
+| --- | --- |
+| [Setup](SETUP.md) | WSL toolchain installation, IDE configuration, and troubleshooting |
+| [Development](DEVELOPMENT.md) | Module responsibilities, a first game, resources, and tests |
 
-After `dkp-pacman` is available, install the Switch development toolchain:
+## Project layout
 
-```bash
-sudo dkp-pacman -Syu
+| Path | Purpose |
+| --- | --- |
+| `game_core/` | Platform-independent game data and rules; host-testable `no_std` crate |
+| `rust_game/src/game/` | Input, session state, rendering, and assets |
+| `rust_game/src/raylib/` | Rust wrapper and raw raylib FFI |
+| `rust_game/src/runtime.rs` | Allocator and fatal error handlers |
+| `source/main.c` | Mount RomFS, call Rust, and unmount RomFS |
+| `romfs/` | Assets packaged into the NRO |
+| `Makefile`, `build.sh`, `test.sh` | Build and test entrypoints |
 
-sudo dkp-pacman -S --needed \
-    switch-dev \
-    dkp-toolchain-vars \
-    switch-mesa
-```
+Each frame reads input, updates the game, begins drawing, and renders. Dropping `Frame` ends drawing. Session data and assets are separate, so resetting keeps loaded resources.
 
-`switch-dev` installs the basic Switch development stack, including devkitA64 and libnx.
+## Status and scope
 
-`dkp-toolchain-vars` provides helper scripts that configure the devkitPro environment (without it you won't get proper tools on path).
+Experimental; tested with Windows 11, WSL2 / Ubuntu 24.04, devkitPro / devkitA64, libnx, raylib-nx, and Rust nightly. Other host environments are untested.
 
-`switch-mesa` provides the Switch EGL/OpenGL ES implementation required by raylib-nx. Otherwise won't compile.
+The target is `aarch64-nintendo-switch-freestanding`. The template builds `core`, `alloc`, and `compiler_builtins` from source; the full Rust standard library is unavailable. `Vec`, `String`, and `Box` use an allocator backed by newlib.
 
-### Important: configure the devkitPro environment
+The wrapper covers a subset of raylib. Use graphics resources on the context's thread and destroy textures before closing the application. The API does not enforce every resource-lifetime requirement. Fatal-error reporting is basic: the panic screen needs a usable graphics context, and allocation failure currently stops in an infinite loop.
 
-On some installations, devkitA64 may be physically installed but not available in your interactive shell.
+The intended style is a straightforward update/draw loop. Grow the modules alongside your game; there is no scene framework or ECS to learn first.
 
+## Example game
 
-Load the Switch environment explicitly:
-
-```bash
-source /opt/devkitpro/switchvars.sh
-```
-
-To make this permanent for Bash:
-
-```bash
-echo 'source /opt/devkitpro/switchvars.sh' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Verify the toolchain:
-
-```bash
-which aarch64-none-elf-gcc
-which aarch64-none-elf-g++
-which elf2nro
-which nacptool
-```
-
-You should see paths under `/opt/devkitpro`.
-
-You can also verify:
-
-```bash
-echo "$DEVKITPRO"
-```
-
-Expected:
-
-```text
-/opt/devkitpro
-```
-
-A `DEVKITA64` environment variable is not required by this template. The current devkitPro environment scripts use `$DEVKITPRO/devkitA64` and configure `PATH` directly.
-
-## 4. Verify Mesa / OpenGL ES
-
-raylib-nx uses EGL and OpenGL ES on Switch.
-
-Verify that the Switch GLES2 headers exist:
-
-```bash
-test -f /opt/devkitpro/portlibs/switch/include/GLES2/gl2.h \
-    && echo "GLES2 OK"
-```
-
-You should see:
-
-```text
-GLES2 OK
-```
-
-If compilation fails with:
-
-```text
-fatal error: GLES2/gl2.h: No such file or directory
-```
-
-install:
-
-```bash
-sudo dkp-pacman -S --needed switch-mesa
-```
-
-Notice **dkp-pacman** here.
-
-Installing Ubuntu's desktop Mesa development package does **not** solve this problem.
-
-## 5. Build raylib-nx
-
-Clone the `luizpestana/raylib-nx` repository from GitHub.
-
-A convenient layout is:
-
-```text
-~/dev/
-├── raylib-nx/
-└── raylib-nx-rust-template/
-```
-
-Build raylib-nx for Switch:
-
-```bash
-cd ~/dev/raylib-nx/src
-
-make PLATFORM=PLATFORM_NX -j"$(nproc)"
-```
-
-After a successful build, verify:
-
-```bash
-ls -lh libraylib.a
-```
-
-Optionally, raylib-nx examples can also be built as a toolchain sanity check:
-
-```bash
-cd ~/dev/raylib-nx/examples
-
-make PLATFORM=PLATFORM_NX -j"$(nproc)"
-```
-
-This should produce Switch `.nro` example applications.
-
-## 6. Install Rust
-
-Install Rust using `rustup`.
-
-This template requires a nightly compiler because the Switch target does not ship with a normal precompiled Rust standard library and the project uses `build-std`.
-
-The repository contains a `rust-toolchain.toml` that selects the appropriate toolchain.
-
-Make sure `rust-src` is installed:
-
-```bash
-rustup toolchain install nightly --component rust-src
-```
-
-Verify:
-
-```bash
-rustc --version
-cargo --version
-rustup show active-toolchain
-```
-
-The project should select nightly automatically when commands are executed inside `rust_game`.
-
-## Rust target configuration
-
-The project uses:
-
-```text
-aarch64-nintendo-switch-freestanding
-```
-
-and builds:
-
-```text
-core
-alloc
-compiler_builtins
-```
-
-from source.
-
-The relevant `.cargo/config.toml` configuration is similar to:
-
-```toml
-[build]
-target = "aarch64-nintendo-switch-freestanding"
-
-[unstable]
-build-std = ["core", "alloc", "compiler_builtins"]
-
-[target.aarch64-nintendo-switch-freestanding]
-rustflags = [
-    "-C", "relocation-model=pic",
-]
-```
-
-The Rust application is built as a static library and linked into the final Switch executable by devkitPro.
-
-## 7. Configure the raylib-nx path
-
-The Makefile needs to know where `raylib-nx` was built.
-
-The default template assumes:
-
-```text
-~/dev/raylib-nx
-```
-
-and should contain something similar to:
-
-```make
-RAYLIB_DIR ?= $(HOME)/dev/raylib-nx
-RAYLIB_LIB := $(RAYLIB_DIR)/src/libraylib.a
-```
-
-If your copy of raylib-nx is somewhere else, either edit `RAYLIB_DIR` in the Makefile or override it when invoking make:
-
-```bash
-make RAYLIB_DIR=/your/path/to/raylib-nx
-```
-
-## 8. Build the template
-
-The easiest way is:
-
-```bash
-./build.sh
-```
-
-or manually:
-
-```bash
-make -j"$(nproc)"
-```
-
-The Makefile first invokes Cargo to build the Rust static library and then uses devkitPro to produce the final Switch executable.
-A regular build is incremental: changes to the Rust or raylib libraries relink the ELF, and changes to RomFS files
-or directories rebuild the NRO. Adding or removing an asset is tracked too.
-
-`build.sh` stops on errors, runs from its own project folder, and forwards arguments to Make.
-The devkitPro environment and Cargo must already be available in the calling shell, as described above.
-Use `./build.sh clean` when you actually want to remove the Switch build outputs; the next regular build recreates them.
-
-A successful build should produce:
-
-```text
-*.elf
-*.nacp
-*.nro
-```
-
-The `.nro` is the file to copy to your Switch.
-
-## Testing game rules
-
-Run `./test.sh` in WSL to test `game_core` on the host. Only Rust/Cargo is needed, not devkitPro or a Switch.
-The script changes into `game_core` so the sibling Switch Cargo configuration does not apply.
-Arguments are forwarded, for example `./test.sh movement` or `./test.sh -- --nocapture`.
-
-Add unit tests beside rules and scenario tests in `game_core/tests/`; see [Development](DEVELOPMENT.md#8-test-game-rules).
-The empty starter has no tests yet. Check graphics, input, and platform integration with a Switch build separately.
-
-## IDE support
-
-RustRover and VS Code with rust-analyzer can both be used with WSL (using a remote connection, i.e. SSH, not just opening the files natively in Windows)
-
-The Switch application in `rust_game` disables normal Rust test targets:
-
-```toml
-[lib]
-crate-type = ["staticlib"]
-test = false
-bench = false
-doctest = false
-```
-
-The Switch target does not provide the normal Rust test harness. Test game rules in `game_core` on the host instead.
-
-### `alloc_error_handler` false positive
-
-rust-analyzer may underline:
-
-```rust
-#[alloc_error_handler]
-```
-
-and report something similar to:
-
-```text
-this built-in macro is not implemented
-```
-
-If `cargo check` and `cargo build` succeed, this is currently only an IDE/rust-analyzer limitation and can be ignored.
-
-The handler is intentionally isolated in `runtime.rs` so this diagnostic does not affect normal game code.
-
-## Troubleshooting
-
-### `aarch64-none-elf-gcc: command not found`
-
-First verify that the compiler exists:
-
-```bash
-ls /opt/devkitpro/devkitA64/bin/aarch64-none-elf-gcc
-```
-
-Then load the environment:
-
-```bash
-source /opt/devkitpro/switchvars.sh
-```
-
-If `switchvars.sh` does not exist, install:
-
-```bash
-sudo dkp-pacman -S dkp-toolchain-vars
-```
-
-### `GLES2/gl2.h: No such file or directory`
-
-Install the Switch Mesa port:
-
-```bash
-sudo dkp-pacman -S switch-mesa
-```
-
-Note the **dkp-pacman** usage.
-
-### Hundreds of C++ linker errors from `libEGL.a`
-
-Make sure the final linker is C++:
-
-```make
-export LD := $(CXX)
-```
-
-### `can't find crate for core`
-
-Make sure:
-
-* the project is using Rust nightly;
-* `rust-src` is installed;
-* `.cargo/config.toml` enables `build-std`;
-* the IDE has reloaded the Cargo project.
-
-Try from a terminal:
-
-```bash
-cargo check
-cargo build --release
-```
-
-If both succeed but the IDE still reports an error, the problem is likely the IDE code model rather than the actual build.
-
-## Design philosophy
-
-This repository intentionally keeps the abstraction small.
-
-The intended layers are:
-
-```text
-game code
-    |
-safe Rust API
-    |
-raylib/sys.rs
-    |
-raylib-nx
-    |
-libnx / devkitPro
-```
-
-Unsafe C interoperability should stay mostly inside `raylib/sys.rs`.
-
-The ergonomic layer currently focuses on simple APIs such as:
-
-```rust
-App
-Frame
-Gamepad
-Vec2
-Rect
-Color
-Text
-```
-
-Additional raylib functionality will be added gradually as real games require it.
-
-Potential future additions include:
-
-```text
-Texture
-Font
-Sound
-Music
-Camera2D
-RenderTexture
-Shader
-Touch
-```
-
-The intention is to evolve this repository alongside actual homebrew games rather than attempting to bind the complete raylib API upfront.
+[Purridor](https://github.com/MrShurukan/purridor): a two-player Quoridor game built on this approach. Its structure differs from the current starter.
 
 ## License
 
-The code in this repository is licensed under the MIT License.
+MIT; see `LICENSE` in the repository root. raylib-nx and the other dependencies have their own licenses.
 
-raylib-nx is a separate external dependency and uses its own license. This repository does not claim ownership of raylib or raylib-nx.
-
-See `LICENSE` for the license covering this repository.
-
-## Disclaimer
-
-This project is an unofficial homebrew development project and is not affiliated with or endorsed by Nintendo, raylib, devkitPro, or switchbrew.
+This is an unofficial homebrew project, unaffiliated with Nintendo, raylib, devkitPro, or switchbrew.
